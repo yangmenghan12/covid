@@ -125,10 +125,6 @@ class myNet(nn.Module):
             return x.squeeze(1)
         else:
             return x
-
-
-
-
 def train_val(model, trainloader, valloader,optimizer, loss, epoch, device, save_):
 
     # trainloader = DataLoader(trainset,batch_size=batch,shuffle=True)

@@ -37,11 +37,11 @@ def get_feature_importance(feature_data, label_data, k =4,column = None):
 class CovidDataset(Dataset):
     def __init__(self, file_path, mode="train", all_feature=False, feature_dim=6):
         with open(file_path, "r") as f:
-            ori_data = list(csv.reader(f))
+            ori_data = list(csv.reader(f))#csv.reader(f) CSV 文件，每行数据会被处理成一个列表, list(csv.reader(f))把CSV 读取器对象转换为一个二维列表
             column = ori_data[0]
-            csv_data = np.array(ori_data[1:])[:, 1:].astype(float)
-        feature = np.array(ori_data[1:])[:, 1:-1]
-        label_data = np.array(ori_data[1:])[:, -1]
+            csv_data = np.array(ori_data[1:])[:, 1:].astype(float)#先把列表（不能切片）去除第一行，在变为矩阵后进行切片即去除第一列
+        feature = np.array(ori_data[1:])[:, 1:-1]                 #为什么要加入astype(float)因为此时矩阵里面的数据是字符串需要转变。
+        label_data = np.array(ori_data[1:])[:, -1]                #为什么不能直接转变为张量：CSV 读取的原始数据默认是字符串，且张量不支持字符串类型。
         if all_feature:
             col = np.array([i for i in range(0, 93)])
         else:
@@ -49,7 +49,7 @@ class CovidDataset(Dataset):
         col = col.tolist()
         if mode == "train":        #逢5取1.
             indices = [i for i in range(len(csv_data)) if i % 5 != 0]
-            data = torch.tensor(csv_data[indices, :-1])
+            data = torch.tensor(csv_data[indices, :-1])#只有张量才能进入神经网络，矩阵必须转变为张量。此时date是一个二维张量。
             self.y = torch.tensor(csv_data[indices, -1])
         elif mode == "val":
             indices = [i for i in range(len(csv_data)) if i % 5 == 0]
@@ -59,16 +59,16 @@ class CovidDataset(Dataset):
             indices = [i for i in range(len(csv_data))]
             data = torch.tensor(csv_data[indices])
         data = data[:, col]
-        self.data = (data- data.mean(dim=0, keepdim=True))/data.std(dim=0, keepdim=True)
-        self.mode = mode
+        self.data = (data- data.mean(dim=0, keepdim=True))/data.std(dim=0, keepdim=True)#归一化处理，避免量纲影响。
+        self.mode = mode#如果没有这句话，其他函数不能调用mode这个变量
     def __getitem__(self, idx):
         if self.mode != "test":
-            return self.data[idx].float(),  self.y[idx].float()
+            return self.data[idx].float(),  self.y[idx].float()#将张量的数据类型强制转换为 float32因为原来的是64位
         else:
             return self.data[idx].float()
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data)#计算date这个张量的第一维长度在这里即有多少行。
 
 
 
@@ -81,12 +81,12 @@ class MyModel(nn.Module):
         self.fc2 = nn.Linear(64, 1)
 
     def forward(self, x):      #模型前向过程
-        x = self.fc1(x)
+        x = self.fc1(x)         #在这个项目中这一步x的维度变为为(16,64);这2个值一个是样本数一个是特征值。
         x = self.relu1(x)
         x = self.fc2(x)
 
-        if len(x.size()) > 1:
-            return x.squeeze(1)
+        if len(x.size()) > 1:#此时x即预测值（pred_y)是2维eg:（16，1）而真实值y是1维eg:(16,)所以要把x变为1维。
+            return x.squeeze(1)       #代表去掉第1维，0代表有几行，1代表有多少列。
 
         return x
 
@@ -105,19 +105,19 @@ def train_val(model, train_loader, val_loader, device, epochs, optimizer, loss, 
         start_time = time.time()
 
         model.train()     #模型调为训练模式
-        for batch_x, batch_y in train_loader:
+        for batch_x, batch_y in train_loader:      #batch_x2维张量（16，3）, batch_y 一维张量（16，）。
             x, target = batch_x.to(device), batch_y.to(device)
             pred = model(x)
-            train_bat_loss = loss(pred, target,model)
+            train_bat_loss = loss(pred, target,model)   #train_bat_loss是一个0维张量即一个数
             train_bat_loss.backward()
             optimizer.step() #更新模型的作用
-            optimizer.zero_grad()
-            train_loss += train_bat_loss.cpu().item()
-        plt_train_loss.append(train_loss / train_loader.__len__())
+            optimizer.zero_grad()   #清除梯度，防止梯度累加
+            train_loss += train_bat_loss.cpu().item()   #train_loss是一个python常量存放在cpu中，所以需要把张量存放在cpu中并取值（变为常量）。
+        plt_train_loss.append(train_loss / train_loader.__len__())#train_loader.__len__()：返回 train_loader 中批次的总数量，
+                                                                  # 通过计算得到平均每批次的损失
 
-
-        model.eval()
-        with torch.no_grad():
+        model.eval()         #模型调为验证模式
+        with torch.no_grad():        #验证集不能更新模型
             for batch_x, batch_y in val_loader:
                 x, target = batch_x.to(device), batch_y.to(device)
                 pred = model(x)
@@ -125,7 +125,7 @@ def train_val(model, train_loader, val_loader, device, epochs, optimizer, loss, 
                 val_loss += val_bat_loss.cpu().item()
         plt_val_loss.append(val_loss/ val_loader.__len__())
         if val_loss < min_val_loss:
-            torch.save(model, save_path)
+            torch.save(model, save_path)     #保存模型
             min_val_loss = val_loss
 
         print("[%03d/%03d] %2.2f sec(s) Trainloss: %.6f |Valloss: %.6f"% \
@@ -145,7 +145,7 @@ def evaluate(sava_path, test_loader,device,rel_path ):   #得出测试结果文�
     rel = []
     with torch.no_grad():
         for x in test_loader:
-            pred = model(x.to(device))
+            pred = model(x.to(device))  #DataLoader 读取的数据会被转换为张量，但默认存储在 CPU 内存中，而模型在GPU中。
             rel.append(pred.cpu().item())
     print(rel)
     with open(rel_path, "w",newline='') as f:
@@ -170,8 +170,8 @@ val_dataset = CovidDataset(train_file, "val",all_feature=all_feature, feature_di
 test_dataset = CovidDataset(test_file, "test",all_feature=all_feature, feature_dim=feature_dim)
 
 batch_size = 16
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)#把数据集（train_dataset）转换为一个可迭代的批量数据加载器
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)    #此时相当于train_loader中是date和y(我的理解是调用了get函数)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 # for batch_x, batch_y in train_loader:
 #     print(batch_x, batch_y)
@@ -191,7 +191,7 @@ config = {
     "lr": 0.001,
     "epochs": 20,
     "momentum": 0.9,
-    "save_path": "model_save/best_model.pth",
+    "save_path": "model_save/best_model.pth",#保存最好的模型路径
     "rel_path": "pred.csv"
 }
 
@@ -209,7 +209,7 @@ def mseLoss_with_reg(pred, target, model):
 
 model = MyModel(inDim=feature_dim).to(device)
 loss = mseLoss_with_reg
-optimizer = optim.SGD(model.parameters(), lr=config["lr"], momentum=config["momentum"])
+optimizer = optim.SGD(model.parameters(), lr=config["lr"], momentum=config["momentum"])  #采用sgd优化器。
 
 train_val(model, train_loader, val_loader, device, config["epochs"], optimizer, loss, config["save_path"])
 
